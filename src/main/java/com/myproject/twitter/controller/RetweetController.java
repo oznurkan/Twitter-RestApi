@@ -1,50 +1,48 @@
 package com.myproject.twitter.controller;
 
 import com.myproject.twitter.dto.request.RetweetRequestDto;
-
-import com.myproject.twitter.dto.response.RetweetResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
+import com.myproject.twitter.dto.response.RetweetActionResponseDto;
+import com.myproject.twitter.dto.response.RetweetUserResponseDto;
 import com.myproject.twitter.service.RetweetService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @Validated
 @RestController
-@RequestMapping("/retweets")
+@RequestMapping("/tweets/{tweetId}/retweets")
+@RequiredArgsConstructor
 public class RetweetController {
 
-    @Autowired
-    private RetweetService retweetService;
-
-    @GetMapping
-    public List<RetweetResponseDto> getAll(){
-
-        return retweetService.getAll();
-    }
-
-    @GetMapping("/{id}")
-    public RetweetResponseDto findById(@Positive @PathVariable("id") Long id){
-
-        return retweetService.findById(id);
-    }
-
+    private final RetweetService retweetService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public RetweetResponseDto create(@Validated @RequestBody RetweetRequestDto retweetRequestDto){
+    public RetweetActionResponseDto create(
+            @Positive(message = "Retweet için tweetId pozitif olmalıdır.") @PathVariable("tweetId") Long tweetId,
+            @Valid @RequestBody RetweetRequestDto retweetRequestDto){
 
-        return retweetService.create(retweetRequestDto);
+        return retweetService.create(tweetId, retweetRequestDto);
     }
 
-
-    @DeleteMapping("/{id}")
+    @DeleteMapping
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@Positive @PathVariable("id") Long id){
+    public void delete(@Positive(message = "Retweet için tweetId pozitif olmalıdır.") @PathVariable("tweetId") Long tweetId){
 
-        retweetService.deleteById(id);
+        retweetService.deleteByTweetId(tweetId);
+    }
+
+    @GetMapping
+    @ResponseStatus(HttpStatus.OK)
+    public CursorPageResponseDto<RetweetUserResponseDto> getRetweetsByTweetId(
+            @Positive(message = "Retweet için tweetId pozitif olmalıdır.") @PathVariable Long tweetId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int size) {
+
+        return retweetService.getRetweetersByTweetId(tweetId, cursor, size);
     }
 }

@@ -1,68 +1,61 @@
 package com.myproject.twitter.service;
 
 import com.myproject.twitter.dto.request.RegisterRequestDto;
+import com.myproject.twitter.dto.response.AuthResponseDto;
 import com.myproject.twitter.dto.response.UserResponseDto;
 import com.myproject.twitter.entity.Role;
 import com.myproject.twitter.entity.User;
+import com.myproject.twitter.entity.enums.RoleType;
+import com.myproject.twitter.exception.RoleNotFoundException;
 import com.myproject.twitter.exception.UserAlreadyRegisteredException;
 import com.myproject.twitter.repository.RoleRepository;
 import com.myproject.twitter.repository.UserRepository;
-import com.myproject.twitter.util.mapper.UserMapper;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.myproject.twitter.util.mapper.AuthMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService{
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    private RoleRepository roleRepository;
+    private final RoleRepository roleRepository;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private UserMapper userMapper;
+    private final AuthMapper authMapper;
+
+    private final UserService userService;
 
     @Override
-    public UserResponseDto register(RegisterRequestDto registerRequestDto) {
+    @Transactional
+    public AuthResponseDto register(RegisterRequestDto registerRequestDto) {
 
-        if(userRepository.findByEmail(registerRequestDto.email()).isPresent())
-            throw new UserAlreadyRegisteredException("Email already registered!");
-
-        User user = userMapper.toEntity(registerRequestDto);
-
-        user.setPassword(passwordEncoder.encode(registerRequestDto.password()));
-
-        if (registerRequestDto.roles() != null && !registerRequestDto.roles().isEmpty()) {
-            registerRequestDto.roles().forEach(roleName -> {
-                Role role = roleRepository.getByAuthority(roleName)
-                        .orElseThrow(() -> new RuntimeException("Hata: " + roleName + " rolü bulunamadı!"));
-                user.getRoles().add(role);
-            });
-        } else {
-            Role userRole = roleRepository.getByAuthority("USER")
-                    .orElseThrow(() -> new RuntimeException("Hata: USER rolü bulunamadı!"));
-            user.getRoles().add(userRole);
+        if (userRepository.findByEmail(registerRequestDto.email()).isPresent()) {
+            throw new UserAlreadyRegisteredException("Email zaten kayıtlı!");
         }
 
-        userRepository.save(user);
+        User user = authMapper.toEntity(registerRequestDto);
+        user.setPassword(passwordEncoder.encode(registerRequestDto.password()));
 
-        return userMapper.toResponseDto(user);
+        Role userRole = roleRepository.findByAuthority(RoleType.ROLE_USER)
+                .orElseThrow(() -> new RoleNotFoundException("ROLE_USER rolü bulunamadı!"));
+
+        user.getRoles().add(userRole);
+
+        User savedUser = userRepository.save(user);
+
+        return authMapper.toResponseDto(savedUser);
     }
 
-    public UserResponseDto getUserByEmail(String email) {
+    @Override
+    @Transactional(readOnly = true)
+    public UserResponseDto getUserByEmail() {
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Kullanıcı bulunamadı!"));
-
-        return userMapper.toResponseDto(user);
+        return userService.getUserByEmail();
     }
-
-
 
 }

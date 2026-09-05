@@ -6,7 +6,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 public class TwitterException extends RuntimeException{
 
-    private HttpStatus httpStatus;
+    private final HttpStatus httpStatus;
 
     public TwitterException(String message, HttpStatus httpStatus){
         super(message);

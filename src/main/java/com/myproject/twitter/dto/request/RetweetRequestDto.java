@@ -1,12 +1,11 @@
 package com.myproject.twitter.dto.request;
 
-
-import java.time.LocalDateTime;
+import jakarta.validation.constraints.Size;
 
 public record RetweetRequestDto(
 
-        String author,
-        Long tweetId,
-        LocalDateTime createdAt
+        @Size( max = 255, message = "Yorum en fazla 255 karakter olabilir." )
+        String text
+
 ) {
 }

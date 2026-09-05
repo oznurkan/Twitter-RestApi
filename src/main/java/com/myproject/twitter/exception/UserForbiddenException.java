@@ -2,8 +2,8 @@ package com.myproject.twitter.exception;
 
 import org.springframework.http.HttpStatus;
 
-public class TwitterForbiddenException extends TwitterException{
-    public TwitterForbiddenException(String message) {
+public class UserForbiddenException extends TwitterException {
+    public UserForbiddenException(String message) {
         super(message, HttpStatus.FORBIDDEN);
     }
 }

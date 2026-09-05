@@ -1,39 +1,64 @@
 package com.myproject.twitter.util.mapper;
 
 import com.myproject.twitter.dto.request.RetweetRequestDto;
-import com.myproject.twitter.dto.response.RetweetResponseDto;
-
+import com.myproject.twitter.dto.response.RetweetActionResponseDto;
+import com.myproject.twitter.dto.response.RetweetUserResponseDto;
 import com.myproject.twitter.entity.Retweet;
 import org.springframework.stereotype.Component;
-
 import java.time.LocalDateTime;
 
 @Component
 public class RetweetMapper {
 
-    public RetweetResponseDto toResponseDto(Retweet retweet){
+    public RetweetActionResponseDto toResponseDto(Retweet retweet, Boolean isRetweeted){
 
-        return new RetweetResponseDto(
-                retweet.getId(),
-                retweet.getUser() != null ? retweet.getUser().getNickName() : "unknown user",
-                retweet.getTweet() != null ? retweet.getTweet().getId() : 0,
-                retweet.getCreatedAt()
+        if (retweet == null) {
+            return null;
+        }
+
+        String nickName = (retweet.getUser() != null) ? retweet.getUser().getNickName() : null;
+        Long tweetId = (retweet.getTweet() != null) ? retweet.getTweet().getId() : null;
+
+        return new RetweetActionResponseDto(
+                tweetId,
+                nickName,
+                retweet.getText(),
+                retweet.getCreatedAt(),
+                isRetweeted
+        );
+
+    }
+
+    public RetweetUserResponseDto toUserResponseDto(Retweet retweet, Boolean isFollowingByCurrentUser){
+
+        if (retweet == null) {
+            return null;
+        }
+
+        String nickName = (retweet.getUser() != null) ? retweet.getUser().getNickName() : null;
+        String firstName = (retweet.getUser() != null) ? retweet.getUser().getFirstName() : null;
+        String lastName = (retweet.getUser() != null) ? retweet.getUser().getLastName() : null;
+
+        return new RetweetUserResponseDto(
+                nickName,
+                firstName,
+                lastName,
+                isFollowingByCurrentUser
         );
 
     }
 
     public Retweet toEntity(RetweetRequestDto retweetRequestDto){
 
-        Retweet retweet = new Retweet();
-
-        if( retweet.getCreatedAt() == null){
-            retweet.setCreatedAt(LocalDateTime.now());
+        if (retweetRequestDto == null) {
+            return null;
         }
+
+        Retweet retweet = new Retweet();
+        retweet.setText(retweetRequestDto.text());
+        retweet.setCreatedAt(LocalDateTime.now());
 
         return retweet;
     }
-
-
-
 
 }

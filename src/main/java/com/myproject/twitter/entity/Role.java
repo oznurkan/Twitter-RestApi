@@ -1,30 +1,27 @@
 package com.myproject.twitter.entity;
 
+import com.myproject.twitter.entity.enums.RoleType;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.*;
-import org.springframework.security.core.GrantedAuthority;
 
-
-@Table(name = "role", schema = "twitter")
+@Table(name = "roles", schema = "twitter")
 @Entity
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
 @ToString
 @EqualsAndHashCode(of = "id")
-public class Role implements GrantedAuthority {
+public class Role{
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank
-    @Size(max = 50)
-    private String authority;
-
+    @Enumerated(EnumType.STRING)
+    @Column(name = "authority", unique = true, nullable = false, length = 50)
+    private RoleType authority;
 
 
 }

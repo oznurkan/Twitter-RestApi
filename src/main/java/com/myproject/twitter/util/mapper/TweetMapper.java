@@ -5,31 +5,25 @@ import com.myproject.twitter.dto.request.TweetRequestDto;
 import com.myproject.twitter.dto.response.TweetResponseDto;
 import com.myproject.twitter.entity.Tweet;
 import org.springframework.stereotype.Component;
-
 import java.time.LocalDateTime;
 
 @Component
 public class TweetMapper {
 
-    public TweetResponseDto toResponseDto(Tweet tweet, String currentUserEmail){
-
-        boolean isLikedByMe = tweet.getLikes().stream()
-                .anyMatch(like -> like.getUser().getEmail().equals(currentUserEmail));
-
-        boolean isRetweetByMe = tweet.getRetweets().stream()
-                .anyMatch(retweet -> retweet.getUser().getEmail().equals(currentUserEmail));
-
+    public TweetResponseDto toResponseDto(Tweet tweet, Long likeCount, Long commentCount, Long retweetCount, Long bookmarkCount, Boolean isLikedByMe, Boolean isRetweetedByMe, Boolean isBookmarkedByMe) {
         return new TweetResponseDto(
                 tweet.getId(),
                 tweet.getContent(),
                 tweet.getCreatedAt(),
                 tweet.getUpdatedAt(),
-                tweet.getUser() != null ? tweet.getUser().getNickName(): "Unknown User",
-                tweet.getLikes().size(),
-                tweet.getComments() != null ? tweet.getComments().size() : 0,
-                tweet.getRetweets().size(),
+                tweet.getUser() != null ? tweet.getUser().getNickName() : "Unknown User",
+                likeCount,
+                commentCount,
+                retweetCount,
+                bookmarkCount,
                 isLikedByMe,
-                isRetweetByMe
+                isRetweetedByMe,
+                isBookmarkedByMe
         );
     }
 
@@ -52,7 +46,6 @@ public class TweetMapper {
         if( tweetPatchRequestDto.content() != null){
             updateTweet.setContent(tweetPatchRequestDto.content());
         }
-
 
         updateTweet.setUpdatedAt(LocalDateTime.now());
     }

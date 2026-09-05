@@ -7,16 +7,19 @@ import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 
-@Table(name = "comment", schema = "twitter")
+@Table(name = "comments", schema = "twitter")
 @Entity
+@EntityListeners(AuditingEntityListener.class)
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString
+@ToString( exclude = { "user", "tweet"})
 @EqualsAndHashCode(of = "id")
 public class Comment {
 
@@ -28,6 +31,7 @@ public class Comment {
     @NotBlank(message = "Yorum içeriği boş bırakılamaz.")
     private String content;
 
+    @NotNull
     @CreatedDate
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;

@@ -1,105 +1,141 @@
 package com.myproject.twitter.service;
 
 import com.myproject.twitter.dto.request.RetweetRequestDto;
-import com.myproject.twitter.dto.response.RetweetResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
+import com.myproject.twitter.dto.response.RetweetActionResponseDto;
+import com.myproject.twitter.dto.response.RetweetUserResponseDto;
 import com.myproject.twitter.entity.Retweet;
 import com.myproject.twitter.entity.Tweet;
 import com.myproject.twitter.entity.User;
+import com.myproject.twitter.exception.RetweetConflictException;
+import com.myproject.twitter.exception.RetweetNotFoundException;
 import com.myproject.twitter.exception.TweetNotFoundException;
-import com.myproject.twitter.exception.TwitterConflictException;
-import com.myproject.twitter.exception.TwitterNotFoundException;
 import com.myproject.twitter.repository.RetweetRepository;
 import com.myproject.twitter.repository.TweetRepository;
+import com.myproject.twitter.security.AuthUtils;
+import com.myproject.twitter.security.CustomUserDetails;
 import com.myproject.twitter.util.mapper.RetweetMapper;
-import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.myproject.twitter.util.pagination.CursorUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class RetweetServiceImpl extends BaseService implements RetweetService {
+@RequiredArgsConstructor
+public class RetweetServiceImpl implements RetweetService {
 
-    @Autowired
-    private RetweetRepository retweetRepository;
+    private final AuthUtils authUtils;
 
-    @Autowired
-    private TweetRepository tweetRepository;
+    private final RetweetRepository retweetRepository;
 
-    @Autowired
-    private RetweetMapper retweetMapper;
+    private final TweetRepository tweetRepository;
 
+    private final FollowService followService;
 
-    @Override
-    public List<RetweetResponseDto> getAll() {
-        return retweetRepository
-                .findAll()
-                .stream()
-                .map(retweetMapper::toResponseDto)
-                .toList();
-    }
-
-    @Override
-    public RetweetResponseDto findById(Long id) {
-
-        Optional<Retweet> optionalRetweet = retweetRepository.findById(id);
-
-        if( optionalRetweet.isPresent()){
-
-            Retweet retweet = optionalRetweet.get();
-
-            return retweetMapper.toResponseDto(retweet);
-        }
-
-        throw new TwitterNotFoundException("retweet bulunamadı, id: " +id);
-    }
-
+    private final RetweetMapper retweetMapper;
 
     @Override
     @Transactional
-    public RetweetResponseDto create(RetweetRequestDto retweetRequestDto) {
+    public RetweetActionResponseDto create(Long tweetId, RetweetRequestDto retweetRequestDto) {
 
-        User currentUser = getCurrentUser();
+        User userReference = authUtils.getCurrentUserReference();
 
-        Tweet tweet = tweetRepository.findById(retweetRequestDto.tweetId())
+        Long currentUserId = userReference.getId();
+
+        Tweet tweet = tweetRepository.findById(tweetId)
                 .orElseThrow(() -> new TweetNotFoundException("Retweet için tweet bulunamadı"));
 
-
-        if (retweetRepository.existsByUserIdAndTweetId(currentUser.getId(), tweet.getId())) {
-            throw new TwitterConflictException("Bu tweeti zaten retweet yaptınız!");
+        if (retweetRepository.existsByUserIdAndTweetId( currentUserId, tweet.getId())) {
+            throw new RetweetConflictException("Bu tweeti zaten retweet yaptınız!");
         }
 
         Retweet retweet = retweetMapper.toEntity(retweetRequestDto);
-        retweet.setUser(currentUser);
+
+        retweet.setUser(userReference);
+
         retweet.setTweet(tweet);
 
-        tweet.addRetweet(retweet);
+        Retweet savedRetweet = retweetRepository.save(retweet);
 
-
-        retweetRepository.save(retweet);
-        return retweetMapper.toResponseDto(retweet);
+        return retweetMapper.toResponseDto(savedRetweet, true);
 
     }
 
     @Override
     @Transactional
-    public void deleteById(Long id) {
+    public void deleteByTweetId(Long tweetId) {
 
-        User currentUser = getCurrentUser();
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
 
-        Retweet retweet = retweetRepository.findByUserIdAndTweetId(currentUser.getId(), id)
-                .orElseThrow(() -> new TwitterNotFoundException("Bu tweet için retweet bulunamadı"));
+        Long currentUserId = currentUser.getId();
 
-
-        if (retweet.getTweet() != null) {
-            retweet.getTweet().getRetweets().remove(retweet);
+        if (!tweetRepository.existsById(tweetId)) {
+            throw new TweetNotFoundException("Retweet için tweet bulunamadı");
         }
 
-        if (retweet.getUser() != null) {
-            retweet.getUser().getRetweets().remove(retweet);
+        if (!retweetRepository.existsByUserIdAndTweetId( currentUserId, tweetId)) {
+            throw new RetweetNotFoundException("Bu tweet için aktif bir retweet bulunamadı");
         }
 
-        retweetRepository.delete(retweet);
+        retweetRepository.deleteByUserIdAndTweetId( currentUserId, tweetId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CursorPageResponseDto<RetweetUserResponseDto> getRetweetersByTweetId(Long tweetId, String cursor, int size) {
+
+        if (!tweetRepository.existsById(tweetId)) {
+            throw new TweetNotFoundException("Tweet bulunamadı: " + tweetId);
+        }
+
+        Long currentUserId = authUtils.getCurrentUserReference().getId();
+
+        CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+
+        Pageable pageable = PageRequest.of(0, size + 1);
+
+        List<Retweet> retweets;
+        if (cursorData.cursorDate() == null || cursorData.lastId() == null) {
+            retweets = retweetRepository.findFirstPageByTweetId(tweetId, pageable);
+        } else {
+            retweets = retweetRepository.findNextPageByTweetId(tweetId, cursorData.cursorDate(), cursorData.lastId(), pageable);
+        }
+
+        boolean hasNext = retweets.size() > size;
+        List<Retweet> content = hasNext ? new ArrayList<>(retweets.subList(0, size)) : retweets;
+
+        String nextCursor = null;
+        if (!content.isEmpty() && hasNext) {
+            Retweet lastItem = content.get(content.size() - 1);
+            nextCursor = CursorUtils.encode(lastItem.getCreatedAt(), lastItem.getId());
+        }
+
+        List<RetweetUserResponseDto> dtoList = content.stream()
+                .map(retweet -> {
+                    boolean isFollowing = followService.isFollowing(currentUserId, retweet.getUser().getId());
+                    return retweetMapper.toUserResponseDto(retweet, isFollowing);
+                })
+                .toList();
+
+        return new CursorPageResponseDto<>(dtoList, nextCursor, hasNext);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isRetweetedByUser(Long tweetId, Long userId) {
+
+        return retweetRepository.existsByUserIdAndTweetId(userId, tweetId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Long countRetweets(Long tweetId) {
+
+        return retweetRepository.countByTweetId(tweetId);
     }
 }

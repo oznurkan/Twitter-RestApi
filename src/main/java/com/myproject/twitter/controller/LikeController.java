@@ -1,58 +1,45 @@
 package com.myproject.twitter.controller;
 
-import com.myproject.twitter.dto.request.LikeRequestDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
-
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
+import com.myproject.twitter.dto.response.LikeActionResponseDto;
+import com.myproject.twitter.dto.response.LikeUserResponseDto;
 import com.myproject.twitter.service.LikeService;
-
 import jakarta.validation.constraints.Positive;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
-
 @Validated
 @RestController
-@RequestMapping
+@RequestMapping("/tweets/{tweetId}")
+@RequiredArgsConstructor
 public class LikeController {
 
-    @Autowired
-    private LikeService likeService;
-
+    private final LikeService likeService;
 
     @PostMapping("/like")
-    public LikeResponseDto  likeTweet(@Validated @RequestBody LikeRequestDto likeRequestDto) {
-        return likeService.create(likeRequestDto);
+    @ResponseStatus(HttpStatus.CREATED)
+    public LikeActionResponseDto like(@Positive(message = "Like için tweetId pozitif olmalıdır.") @PathVariable Long tweetId) {
+
+        return likeService.like(tweetId);
     }
 
+    @PostMapping("/unlike")
+    @ResponseStatus(HttpStatus.OK)
+    public LikeActionResponseDto unlike(@Positive(message = "Like için tweetId pozitif olmalıdır.") @PathVariable Long tweetId) {
 
-    @PostMapping("/dislike")
-    public void dislikeTweet(@Validated @RequestBody LikeRequestDto likeRequestDto) {
-       likeService.deleteLike(likeRequestDto);
+        return likeService.unlike(tweetId);
     }
-
 
     @GetMapping("/likes")
-    public List<LikeResponseDto> getAll(){
+    @ResponseStatus(HttpStatus.OK)
+    public CursorPageResponseDto<LikeUserResponseDto> getLikesByTweetId(
+            @Positive(message = "Like için tweetId pozitif olmalıdır.") @PathVariable Long tweetId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") int size) {
 
-        return likeService.findAll();
-    }
-
-    @GetMapping("/likes/{id}")
-    public LikeResponseDto findById(@Positive @PathVariable("id") Long id){
-
-        return likeService.findById(id);
-    }
-
-
-    @PostMapping("/likes")
-    @ResponseStatus(HttpStatus.CREATED)
-    public LikeResponseDto create(@Validated @RequestBody LikeRequestDto likeRequestDto){
-
-        return likeService.create(likeRequestDto);
+        return likeService.getLikesByTweetId(tweetId, cursor, size);
     }
 
 }

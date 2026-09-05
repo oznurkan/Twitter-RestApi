@@ -2,38 +2,23 @@ package com.myproject.twitter.service;
 
 import com.myproject.twitter.dto.request.TweetPatchRequestDto;
 import com.myproject.twitter.dto.request.TweetRequestDto;
-import com.myproject.twitter.dto.response.CommentResponseDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
-import com.myproject.twitter.dto.response.RetweetResponseDto;
-import com.myproject.twitter.dto.response.TweetResponseDto;
-
+import com.myproject.twitter.dto.response.*;
 import java.util.List;
 
 public interface TweetService {
 
-    List<TweetResponseDto> findAll();
+    CursorPageResponseDto<TweetResponseDto> getFeedTweets(String cursor, int size);
+
     TweetResponseDto create(TweetRequestDto tweetRequestDto);
 
     TweetResponseDto findById(Long id);
-    TweetResponseDto update(Long id, TweetPatchRequestDto tweetPatchRequestDto);
-    TweetResponseDto replaceOrCreate(Long id, TweetRequestDto tweetRequestDto);
-    void deleteById(Long id);
 
-    List<TweetResponseDto> findByUserId();
+    TweetResponseDto update(Long tweetId, TweetPatchRequestDto tweetPatchRequestDto);
 
-    List<LikeResponseDto> getLikes(Long id);
-    List<CommentResponseDto> getComments(Long id);
-    List<RetweetResponseDto> getRetweets(Long id);
+    TweetResponseDto replaceOrCreate(Long tweetId, TweetRequestDto tweetRequestDto);
 
-    TweetResponseDto assignLike(Long tweetId, Long likeId);
-    TweetResponseDto assignComment(Long tweetId, Long commentId);
-    TweetResponseDto assignRetweet(Long tweetId, Long retweetId);
+    void deleteById(Long tweetId);
 
-    void removeLike(Long tweetId, Long likeId);
-    void removeComment(Long tweetId, Long commentId);
-    void removeRetweet(Long tweetId, Long retweetId);
-
-    List<TweetResponseDto> searchTweetByContext(String text);
-
+    CursorPageResponseDto<TweetResponseDto> searchTweetByContent(String text, String cursor, int size);
 
 }

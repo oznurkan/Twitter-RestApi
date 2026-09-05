@@ -1,18 +1,19 @@
 package com.myproject.twitter.service;
 
-import com.myproject.twitter.dto.request.LikeRequestDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
-
-import java.util.List;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
+import com.myproject.twitter.dto.response.LikeActionResponseDto;
+import com.myproject.twitter.dto.response.LikeUserResponseDto;
 
 public interface LikeService {
 
-    List<LikeResponseDto> findAll();
-    LikeResponseDto findById(Long id);
+    LikeActionResponseDto like(Long tweetId);
 
+    LikeActionResponseDto unlike(Long tweetId);
 
-    LikeResponseDto create(LikeRequestDto likeRequestDto);
-    void deleteLike(LikeRequestDto likeRequestDto);
+    CursorPageResponseDto<LikeUserResponseDto> getLikesByTweetId(Long tweetId, String cursor, int size);
 
+    boolean isLikedByUser(Long tweetId, Long userId);
+
+    Long countLikes(Long tweetId);
 
 }

@@ -3,122 +3,90 @@ package com.myproject.twitter.service;
 import com.myproject.twitter.dto.request.CommentPatchRequestDto;
 import com.myproject.twitter.dto.request.CommentRequestDto;
 import com.myproject.twitter.dto.response.CommentResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
 import com.myproject.twitter.entity.Comment;
 import com.myproject.twitter.entity.Tweet;
-import com.myproject.twitter.exception.TwitterNotFoundException;
+import com.myproject.twitter.entity.User;
+import com.myproject.twitter.exception.BadRequestException;
+import com.myproject.twitter.exception.CommentNotFoundException;
+import com.myproject.twitter.exception.TweetNotFoundException;
 import com.myproject.twitter.repository.CommentRepository;
 import com.myproject.twitter.repository.TweetRepository;
+import com.myproject.twitter.security.AuthUtils;
 import com.myproject.twitter.util.mapper.CommentMapper;
-
-import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
-
+import com.myproject.twitter.util.pagination.CursorUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class CommentServiceImpl extends BaseService implements CommentService{
+@RequiredArgsConstructor
+public class CommentServiceImpl implements CommentService{
 
-    @Autowired
-    private CommentRepository commentRepository;
+    private final AuthUtils authUtils;
 
-    @Autowired
-    private TweetRepository tweetRepository;
+    private final CommentRepository commentRepository;
 
-    @Autowired
-    private CommentMapper commentMapper;
+    private final TweetRepository tweetRepository;
 
-
-    @Override
-    public List<CommentResponseDto> getAll() {
-
-        return commentRepository
-            .findAll()
-            .stream()
-            .map(commentMapper::toResponseDto)
-            .toList();
-    }
+    private final CommentMapper commentMapper;
 
     @Override
-    public CommentResponseDto findById(Long id) {
+    @Transactional(readOnly = true)
+    public CommentResponseDto findById(Long tweetId, Long commentId) {
 
-        Optional<Comment> optionalComment = commentRepository.findById(id);
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new CommentNotFoundException("Comment bulunamadı, id: " + commentId));
 
-        if( optionalComment.isPresent() ){
-
-            Comment comment = optionalComment.get();
-
-            return commentMapper.toResponseDto(comment);
+        if (!comment.getTweet().getId().equals(tweetId)) {
+            throw new BadRequestException("Bu yorum bu tweet'e ait değil!");
         }
-
-        throw new TwitterNotFoundException("comment bulunamadı , id: " +id);
-    }
-
-
-
-    @Override
-    @Transactional
-    public CommentResponseDto replaceOrCreate(Long id, CommentRequestDto commentRequestDto) {
-
-        Comment comment = commentMapper.toEntity(commentRequestDto);
-
-        Optional<Comment> optionalComment = commentRepository.findById(id);
-
-        if( optionalComment.isPresent() ){
-
-            comment.setId(id);
-
-            verifyOwnership(comment.getUser().getEmail());
-
-            commentRepository.save(comment);
-
-            return commentMapper.toResponseDto(comment);
-        }
-
-        comment.setUser(getCurrentUser());
-
-        commentRepository.save(comment);
 
         return commentMapper.toResponseDto(comment);
     }
 
+
     @Override
     @Transactional
-    public CommentResponseDto update(Long id, CommentPatchRequestDto commentPatchRequestDto){
+    public CommentResponseDto update(Long tweetId, Long commentId, CommentPatchRequestDto commentPatchRequestDto){
 
         Comment commentToUpdate = commentRepository
-                .findById(id)
-                .orElseThrow(() -> new TwitterNotFoundException("comment bulunumadı, id: " +id));
+                .findById(commentId)
+                .orElseThrow(() -> new CommentNotFoundException("comment bulunumadı, id: " + commentId));
 
-        verifyOwnership(commentToUpdate.getUser().getEmail());
+        authUtils.verifyOwnership(commentToUpdate.getUser().getId());
 
-        if (commentPatchRequestDto.tweetId() != null && !commentToUpdate.getTweet().getId().equals(commentPatchRequestDto.tweetId())) {
-            throw new TwitterNotFoundException("Bu yorum bu tweet'e ait değil!");
+        if (tweetId != null && !commentToUpdate.getTweet().getId().equals(tweetId)) {
+            throw new BadRequestException("Bu yorum bu tweet'e ait değil!");
         }
 
 
         commentMapper.updateEntity(commentToUpdate, commentPatchRequestDto);
 
-        commentRepository.save(commentToUpdate);
+        Comment savedComment = commentRepository.save(commentToUpdate);
 
-        return commentMapper.toResponseDto(commentToUpdate);
+        return commentMapper.toResponseDto(savedComment);
 
 
     }
 
     @Override
     @Transactional
-    public CommentResponseDto create(CommentRequestDto commentRequestDto) {
+    public CommentResponseDto create(Long tweetId, CommentRequestDto commentRequestDto) {
 
-        Tweet tweet = tweetRepository.findById(commentRequestDto.tweetId())
-                .orElseThrow(() -> new TwitterNotFoundException("Tweet bulunamadı"));
+        User currentUser = authUtils.getCurrentUserReference();
 
+        Tweet tweet = tweetRepository.findById(tweetId)
+                .orElseThrow(() -> new TweetNotFoundException("Yorum için tweet bulunamadı"));
 
         Comment comment = commentMapper.toEntity(commentRequestDto);
         comment.setTweet(tweet);
-        comment.setUser(getCurrentUser());
+        comment.setUser(currentUser);
 
         Comment savedComment = commentRepository.save(comment);
 
@@ -127,27 +95,72 @@ public class CommentServiceImpl extends BaseService implements CommentService{
 
     @Override
     @Transactional
-    public void deleteById(Long id) {
+    public void deleteById(Long tweetId, Long commentId) {
 
-        Comment comment = commentRepository.findById(id)
-                .orElseThrow(() -> new TwitterNotFoundException("Yorum bulunamadı, id: " + id));
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new CommentNotFoundException("Yorum bulunamadı, id: " + commentId));
 
-        verifyCommentDeletionAuth(
+        if (!comment.getTweet().getId().equals(tweetId)) {
+            throw new BadRequestException("Bu yorum bu tweet'e ait değil!");
+        }
+
+        authUtils.verifyCommentDeletionAuth(
                 comment.getUser().getId(),
                 comment.getTweet().getUser().getId()
         );
 
-        commentRepository.deleteById(id);
+        commentRepository.deleteById(commentId);
     }
 
 
     @Override
+    @Transactional(readOnly = true)
     public List<CommentResponseDto> searchByContent(String content) {
         return commentRepository
                 .searchByContent(content)
                 .stream()
                 .map(commentMapper::toResponseDto)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Long countComments(Long tweetId){
+
+        return commentRepository.countByTweetId(tweetId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CursorPageResponseDto<CommentResponseDto> getCommentsByTweetId(Long tweetId, String cursor, int size) {
+        if (!tweetRepository.existsById(tweetId)) {
+            throw new TweetNotFoundException("Tweet bulunamadı: " + tweetId);
+        }
+
+        CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+        Pageable pageable = PageRequest.of(0, size + 1);
+
+        List<Comment> comments;
+        if (cursorData.cursorDate() == null || cursorData.lastId() == null) {
+            comments = commentRepository.findFirstPageByTweetId(tweetId, pageable);
+        } else {
+            comments = commentRepository.findNextPageByTweetId(tweetId, cursorData.cursorDate(), cursorData.lastId(), pageable);
+        }
+
+        boolean hasNext = comments.size() > size;
+        List<Comment> content = hasNext ? new ArrayList<>(comments.subList(0, size)) : comments;
+
+        String nextCursor = null;
+        if (!content.isEmpty() && hasNext) {
+            Comment lastItem = content.get(content.size() - 1);
+            nextCursor = CursorUtils.encode(lastItem.getCreatedAt(), lastItem.getId());
+        }
+
+        List<CommentResponseDto> dtoList = content.stream()
+                .map(commentMapper::toResponseDto)
+                .toList();
+
+        return new CursorPageResponseDto<>(dtoList, nextCursor, hasNext);
     }
 
 

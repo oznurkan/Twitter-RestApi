@@ -2,345 +2,183 @@ package com.myproject.twitter.service;
 
 import com.myproject.twitter.dto.request.TweetPatchRequestDto;
 import com.myproject.twitter.dto.request.TweetRequestDto;
-import com.myproject.twitter.dto.response.CommentResponseDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
-import com.myproject.twitter.dto.response.RetweetResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
 import com.myproject.twitter.dto.response.TweetResponseDto;
 import com.myproject.twitter.entity.*;
 import com.myproject.twitter.exception.TweetNotFoundException;
-import com.myproject.twitter.exception.TwitterNotFoundException;
 import com.myproject.twitter.repository.*;
-import com.myproject.twitter.util.mapper.CommentMapper;
-import com.myproject.twitter.util.mapper.LikeMapper;
-import com.myproject.twitter.util.mapper.RetweetMapper;
+import com.myproject.twitter.security.AuthUtils;
+import com.myproject.twitter.security.CustomUserDetails;
+import com.myproject.twitter.util.helper.TweetEnricher;
 import com.myproject.twitter.util.mapper.TweetMapper;
-import com.myproject.twitter.util.security.SecurityUtils;
-import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.myproject.twitter.util.pagination.CursorUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class TweetServiceImpl extends BaseService implements TweetService{
+@RequiredArgsConstructor
+public class TweetServiceImpl implements TweetService {
 
-    @Autowired
-    private TweetRepository tweetRepository;
+    private final AuthUtils authUtils;
 
-    @Autowired
-    private UserRepository userRepository;
+    private final TweetRepository tweetRepository;
 
-    @Autowired
-    private LikeRepository likeRepository;
+    private final TweetMapper tweetMapper;
 
-    @Autowired
-    private CommentRepository commentRepository;
-
-    @Autowired
-    private RetweetRepository retweetRepository;
-
-    @Autowired
-    private TweetMapper tweetMapper;
-
-    @Autowired
-    private LikeMapper likeMapper;
-
-    @Autowired
-    private CommentMapper commentMapper;
-
-    @Autowired
-    private RetweetMapper retweetMapper;
+    private final TweetEnricher tweetEnricher;
 
     @Override
-    public List<TweetResponseDto> findAll() {
+    @Transactional(readOnly = true)
+    public CursorPageResponseDto<TweetResponseDto> getFeedTweets(String cursor, int size) {
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
+        Long currentUserId = currentUser.getId();
 
-        String currentUserEmail = SecurityUtils.getCurrentUserEmail();
+        CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+        PageRequest pageRequest = PageRequest.of(0, size + 1);
 
+        List<Tweet> tweets;
+        if (cursorData.cursorDate() == null || cursorData.lastId() == null) {
+            tweets = tweetRepository.findFirstPage(pageRequest);
+        } else {
+            tweets = tweetRepository.findNextPage(cursorData.cursorDate(), cursorData.lastId(), pageRequest);
+        }
 
-        return tweetRepository
-                .findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(tweet -> tweetMapper.toResponseDto(tweet, currentUserEmail))
+        boolean hasNext = tweets.size() > size;
+        List<Tweet> pageContent = hasNext ? new ArrayList<>(tweets.subList(0, size)) : tweets;
+
+        String nextCursor = null;
+        if (hasNext && !pageContent.isEmpty()) {
+            Tweet lastTweet = pageContent.get(pageContent.size() - 1);
+            nextCursor = CursorUtils.encode(lastTweet.getCreatedAt(), lastTweet.getId());
+        }
+
+        List<TweetResponseDto> dtoList = pageContent.stream()
+                .map(tweet -> tweetEnricher.enrich(tweet, currentUserId))
                 .toList();
+
+        return new CursorPageResponseDto<>(dtoList, nextCursor, hasNext);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public TweetResponseDto findById(Long id) {
 
-        Optional<Tweet> optionalTweet = tweetRepository.findById(id);
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
 
-        String currentUserEmail = SecurityUtils.getCurrentUserEmail();
+        Tweet tweet = tweetRepository.findById(id)
+                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı, id: " + id));
 
-        if( optionalTweet.isPresent()){
+        return tweetEnricher.enrich(tweet, currentUser.getId());
+    }
 
-            Tweet tweet = optionalTweet.get();
+    @Override
+    @Transactional(readOnly = true)
+    public CursorPageResponseDto<TweetResponseDto> searchTweetByContent(String text, String cursor, int size) {
 
-            return tweetMapper.toResponseDto(tweet, currentUserEmail);
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
+        Long currentUserId = currentUser.getId();
+
+        CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+        PageRequest pageRequest = PageRequest.of(0, size + 1);
+
+        List<Tweet> tweets;
+        if (cursorData.cursorDate() == null || cursorData.lastId() == null) {
+            tweets = tweetRepository.searchFirstPageByContent(text, pageRequest);
+        } else {
+            tweets = tweetRepository.searchNextPageByContent(text, cursorData.cursorDate(), cursorData.lastId(), pageRequest);
         }
 
+        boolean hasNext = tweets.size() > size;
+        List<Tweet> pageContent = hasNext ? new ArrayList<>(tweets.subList(0, size)) : tweets;
 
-        throw new TweetNotFoundException("Tweet bulunamadi , id: " +id);
+        String nextCursor = null;
+        if (hasNext && !pageContent.isEmpty()) {
+            Tweet lastTweet = pageContent.get(pageContent.size() - 1);
+            nextCursor = CursorUtils.encode(lastTweet.getCreatedAt(), lastTweet.getId());
+        }
+
+        List<TweetResponseDto> dtoList = pageContent.stream()
+                .map(tweet -> tweetEnricher.enrich(tweet, currentUserId))
+                .toList();
+
+        return new CursorPageResponseDto<>(dtoList, nextCursor, hasNext);
     }
 
     @Override
     @Transactional
     public TweetResponseDto create(TweetRequestDto tweetRequestDto) {
 
+        authUtils.getRequiredCurrentUserDetails();
+
+        User userReference = authUtils.getCurrentUserReference();
+
         Tweet tweet = tweetMapper.toEntity(tweetRequestDto);
 
-        User author = getCurrentUser();
+        tweet.setUser(userReference);
 
-        tweet.setUser(author);
+        Tweet savedTweet = tweetRepository.save(tweet);
 
-        tweetRepository.save(tweet);
-
-        return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail());
+        return tweetMapper.toResponseDto(savedTweet, 0L, 0L, 0L, 0L, false, false, false);
     }
-
 
     @Override
     @Transactional
-    public TweetResponseDto update(Long id, TweetPatchRequestDto tweetPatchRequestDto) {
+    public TweetResponseDto update(Long tweetId, TweetPatchRequestDto tweetPatchRequestDto) {
 
-        Tweet tweetToUpdate = tweetRepository.findById(id)
-                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı"));
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
 
-        verifyOwnership(tweetToUpdate.getUser().getEmail());
+        Tweet tweetToUpdate = tweetRepository.findById(tweetId)
+                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı, id: " + tweetId));
+
+        authUtils.verifyOwnership(tweetToUpdate.getUser().getId());
 
         tweetMapper.updateEntity(tweetToUpdate, tweetPatchRequestDto);
 
-        tweetRepository.save(tweetToUpdate);
+        Tweet savedTweet = tweetRepository.save(tweetToUpdate);
 
-        return tweetMapper.toResponseDto(tweetToUpdate, getCurrentUser().getEmail());
+        return tweetEnricher.enrich(savedTweet, currentUser.getId());
     }
 
     @Override
     @Transactional
-    public TweetResponseDto replaceOrCreate(Long id, TweetRequestDto tweetRequestDto) {
+    public TweetResponseDto replaceOrCreate(Long tweetId, TweetRequestDto tweetRequestDto) {
 
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
 
-        Tweet tweet = tweetMapper.toEntity(tweetRequestDto);
+        User userReference = authUtils.getCurrentUserReference();
 
-        Optional<Tweet> optionalTweet = tweetRepository.findById(id);
+        Tweet tweetToSave = tweetRepository.findById(tweetId)
+                .map(existingTweet -> {
+                    authUtils.verifyOwnership(existingTweet.getUser().getId());
+                    existingTweet.setContent(tweetRequestDto.content());
+                    return existingTweet;
+                })
+                .orElseGet(() -> {
+                    Tweet newTweet = tweetMapper.toEntity(tweetRequestDto);
+                    newTweet.setUser(userReference);
+                    return newTweet;
+                });
 
+        Tweet savedTweet = tweetRepository.save(tweetToSave);
 
-        if( optionalTweet.isPresent() ){
-
-            tweet.setId(id);
-
-            verifyOwnership(tweet.getUser().getEmail());
-
-            tweetRepository.save(tweet);
-
-            return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail());
-
-        }
-
-        tweet.setUser(getCurrentUser());
-
-        tweetRepository.save(tweet);
-        return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail());
+        return tweetEnricher.enrich(savedTweet, currentUser.getId());
     }
 
     @Override
     @Transactional
-    public void deleteById(Long id) {
+    public void deleteById(Long tweetId) {
 
-        Tweet tweet = tweetRepository.findById(id).orElseThrow(() -> new TwitterNotFoundException("Tweet bulunamadı , id:" +id));
+        Tweet tweet = tweetRepository.findById(tweetId)
+                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı , id:" + tweetId));
 
-        verifyOwnership(tweet.getUser().getEmail());
+        authUtils.verifyOwnership(tweet.getUser().getId());
 
-        tweetRepository.deleteById(id);
-
+        tweetRepository.delete(tweet);
     }
-
-    @Override
-    public List<TweetResponseDto> findByUserId() {
-
-        User author = getCurrentUser();
-
-        return tweetRepository.findByUserId(author.getId())
-                .stream()
-                .map((tweet) -> tweetMapper.toResponseDto( tweet,getCurrentUser().getEmail()))
-                .toList();
-    }
-
-    @Override
-    public List<LikeResponseDto> getLikes(Long id) {
-
-        Tweet tweet = tweetRepository
-                .findById(id)
-                .orElseThrow(()-> new TwitterNotFoundException("tweet bulunamadi, id : " + id));
-
-        return tweet
-                .getLikes()
-                .stream()
-                .map(likeMapper::toResponseDto)
-                .toList();
-    }
-
-    @Override
-    public List<CommentResponseDto> getComments(Long id) {
-
-        Tweet tweet = tweetRepository
-                .findById(id)
-                .orElseThrow(()-> new TwitterNotFoundException("tweet bulunamadi, id : " + id));
-
-
-        return tweet
-                .getComments()
-                .stream()
-                .map(commentMapper::toResponseDto)
-                .toList();
-
-
-    }
-
-    @Override
-    public List<RetweetResponseDto> getRetweets(Long id) {
-
-        Tweet tweet = tweetRepository
-                .findById(id)
-                .orElseThrow(()-> new TwitterNotFoundException("tweet bulunamadi, id : " + id));
-
-        return tweet
-                .getRetweets()
-                .stream()
-                .map(retweetMapper::toResponseDto)
-                .toList();
-
-
-    }
-
-    @Override
-    @Transactional
-    public TweetResponseDto assignLike(Long tweetId, Long likeId) {
-
-
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Like like = likeRepository
-                .findById(likeId)
-                .orElseThrow(()-> new TwitterNotFoundException("like bulunamadi, id : " + likeId));
-
-        tweet.addLike(like);
-        like.setTweet(tweet);
-
-        tweetRepository.save(tweet);
-
-        return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail() );
-    }
-
-    @Override
-    @Transactional
-    public TweetResponseDto assignComment(Long tweetId, Long commentId) {
-
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Comment comment = commentRepository
-                .findById(commentId)
-                .orElseThrow(()-> new TwitterNotFoundException("Comment bulunamadi, id : " + commentId));
-
-        tweet.addComment(comment);
-        comment.setTweet(tweet);
-
-        tweetRepository.save(tweet);
-
-        return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail());
-    }
-
-    @Override
-    @Transactional
-    public TweetResponseDto assignRetweet(Long tweetId, Long retweetId) {
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Retweet retweet = retweetRepository
-                .findById(retweetId)
-                .orElseThrow(()-> new TwitterNotFoundException("Retweet bulunamadi, id : " + retweetId));
-
-        tweet.addRetweet(retweet);
-        retweet.setTweet(tweet);
-
-        tweetRepository.save(tweet);
-
-        return tweetMapper.toResponseDto(tweet, getCurrentUser().getEmail());
-    }
-
-    @Override
-    @Transactional
-    public void removeLike(Long tweetId, Long likeId) {
-
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Like like = likeRepository
-                .findById(likeId)
-                .orElseThrow(()-> new TwitterNotFoundException("like bulunamadi, id : " + likeId));
-
-        tweet.deleteLike(like);
-        like.setTweet(null);
-
-        tweetRepository.save(tweet);
-
-    }
-
-    @Override
-    @Transactional
-    public void removeComment(Long tweetId, Long commentId) {
-
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Comment comment = commentRepository
-                .findById(commentId)
-                .orElseThrow(()-> new TwitterNotFoundException("Comment bulunamadi, id : " + commentId));
-
-        tweet.deleteComment(comment);
-        comment.setTweet(null);
-
-        tweetRepository.save(tweet);
-
-
-    }
-
-    @Override
-    @Transactional
-    public void removeRetweet(Long tweetId, Long retweetId) {
-
-        Tweet tweet = tweetRepository
-                .findById(tweetId)
-                .orElseThrow(()-> new TweetNotFoundException("tweet bulunamadi, id : " + tweetId));
-
-        Retweet retweet = retweetRepository
-                .findById(retweetId)
-                .orElseThrow(()-> new TwitterNotFoundException("Retweet bulunamadi, id : " + retweetId));
-
-        tweet.deleteRetweet(retweet);
-        retweet.setTweet(null);
-
-        tweetRepository.save(tweet);
-
-    }
-
-    @Override
-    public List<TweetResponseDto> searchTweetByContext(String text){
-
-        return tweetRepository
-                .searchTweetByContext(text)
-                .stream()
-                .map((tweet) -> tweetMapper.toResponseDto( tweet,getCurrentUser().getEmail()))
-                .toList();
-    }
-
-
 
 }

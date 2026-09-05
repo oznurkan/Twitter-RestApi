@@ -1,104 +1,140 @@
 package com.myproject.twitter.service;
 
-import com.myproject.twitter.dto.request.LikeRequestDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
+import com.myproject.twitter.dto.response.LikeActionResponseDto;
+import com.myproject.twitter.dto.response.LikeUserResponseDto;
 import com.myproject.twitter.entity.Like;
 import com.myproject.twitter.entity.Tweet;
 import com.myproject.twitter.entity.User;
+import com.myproject.twitter.exception.LikeConflictException;
+import com.myproject.twitter.exception.LikeNotFoundException;
 import com.myproject.twitter.exception.TweetNotFoundException;
-import com.myproject.twitter.exception.TwitterConflictException;
-import com.myproject.twitter.exception.TwitterNotFoundException;
 import com.myproject.twitter.repository.LikeRepository;
 import com.myproject.twitter.repository.TweetRepository;
+import com.myproject.twitter.security.AuthUtils;
+import com.myproject.twitter.security.CustomUserDetails;
 import com.myproject.twitter.util.mapper.LikeMapper;
-import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.myproject.twitter.util.pagination.CursorUtils;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class LikeServiceImpl extends BaseService implements LikeService{
+@RequiredArgsConstructor
+public class LikeServiceImpl implements LikeService{
 
-    @Autowired
-    private LikeRepository likeRepository;
+    private final AuthUtils authUtils;
 
-    @Autowired
-    private TweetRepository tweetRepository;
+    private final LikeRepository likeRepository;
 
-    @Autowired
-    private LikeMapper likeMapper;
+    private final TweetRepository tweetRepository;
 
-    @Override
-    public List<LikeResponseDto> findAll() {
-        return likeRepository
-                .findAll()
-                .stream()
-                .map(likeMapper::toResponseDto)
-                .toList();
-    }
+    private final FollowService followService;
 
-    @Override
-    public LikeResponseDto findById(Long id) {
-
-        Optional<Like> optionalLike = likeRepository.findById(id);
-
-        if( optionalLike.isPresent() ){
-
-            Like like = optionalLike.get();
-
-            return likeMapper.toResponseDto(like);
-        }
-
-        throw new TwitterNotFoundException("like bulunamadı, id: " +id);
-    }
+    private final LikeMapper likeMapper;
 
     @Override
     @Transactional
-    public LikeResponseDto create(LikeRequestDto likeRequestDto) {
+    public LikeActionResponseDto like(Long tweetId) {
 
-        User currentUser = getCurrentUser();
+        User userReference = authUtils.getCurrentUserReference();
 
-        Tweet tweet = tweetRepository.findById(likeRequestDto.tweetId())
-                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı"));
+        Long currentUserId = userReference.getId();
 
+        Tweet tweet = tweetRepository.findById(tweetId)
+                .orElseThrow(() -> new TweetNotFoundException("Like için tweet bulunamadı"));
 
-        if (likeRepository.existsByUserIdAndTweetId(currentUser.getId(), tweet.getId())) {
-            throw new TwitterConflictException("Bu tweeti zaten beğendiniz!");
+        if (likeRepository.existsByUserIdAndTweetId( currentUserId, tweet.getId())) {
+            throw new LikeConflictException("Bu tweeti zaten like yaptınız!");
         }
 
-        Like like = likeMapper.toEntity(likeRequestDto);
-        like.setUser(currentUser);
+        Like like = new Like();
+        like.setUser(userReference);
         like.setTweet(tweet);
 
-        tweet.addLike(like);
+        Like savedLike = likeRepository.save(like);
 
-
-        likeRepository.save(like);
-        return likeMapper.toResponseDto(like);
-
+        return likeMapper.toResponseDto(savedLike, true);
     }
 
     @Override
     @Transactional
-    public void deleteLike(LikeRequestDto likeRequestDto) {
+    public LikeActionResponseDto unlike(Long tweetId) {
 
-        User currentUser = getCurrentUser();
+        CustomUserDetails currentUser = authUtils.getRequiredCurrentUserDetails();
 
-        Like like = likeRepository.findByUserIdAndTweetId(currentUser.getId(), likeRequestDto.tweetId())
-                .orElseThrow(() -> new TwitterNotFoundException("Bu tweet için beğeni bulunamadı."));
+        Long currentUserId = currentUser.getId();
 
-        if (like.getTweet() != null) {
-            like.getTweet().getLikes().remove(like);
+        Tweet tweet = tweetRepository.findById(tweetId)
+                .orElseThrow(() -> new TweetNotFoundException("Tweet bulunamadı"));
+
+        Like existingLike = likeRepository.findByUserIdAndTweetId(currentUserId, tweet.getId())
+                .orElseThrow(() -> new LikeNotFoundException("Bu tweet için aktif bir beğeniniz bulunamadı!"));
+
+        LikeActionResponseDto responseDto = likeMapper.toResponseDto(existingLike, false);
+
+        likeRepository.delete(existingLike);
+
+        return responseDto;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CursorPageResponseDto<LikeUserResponseDto> getLikesByTweetId(Long tweetId, String cursor, int size) {
+
+        if (!tweetRepository.existsById(tweetId)) {
+            throw new TweetNotFoundException("Tweet bulunamadı: " + tweetId);
         }
 
-        if (like.getUser() != null) {
-            like.getUser().getLikes().remove(like);
+        Long currentUserId = authUtils.getCurrentUserReference().getId();
+
+        CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+
+        Pageable pageable = PageRequest.of(0, size + 1);
+
+        List<Like> likes;
+        if (cursorData.cursorDate() == null || cursorData.lastId() == null) {
+            likes = likeRepository.findFirstPageByTweetId(tweetId, pageable);
+        } else {
+            likes = likeRepository.findNextPageByTweetId(tweetId, cursorData.cursorDate(), cursorData.lastId(), pageable);
         }
 
-        likeRepository.delete(like);
+        boolean hasNext = likes.size() > size;
+        List<Like> content = hasNext ? new ArrayList<>(likes.subList(0, size)) : likes;
 
+        String nextCursor = null;
+        if (!content.isEmpty() && hasNext) {
+            Like lastItem = content.get(content.size() - 1);
+            nextCursor = CursorUtils.encode(lastItem.getCreatedAt(), lastItem.getId());
+        }
+
+        List<LikeUserResponseDto> dtoList = content.stream()
+                .map(like -> {
+                    boolean isFollowing = followService.isFollowing(currentUserId, like.getUser().getId());
+                    return likeMapper.toUserResponseDto(like, isFollowing);
+                })
+                .toList();
+
+        return new CursorPageResponseDto<>(dtoList, nextCursor, hasNext);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isLikedByUser(Long tweetId, Long userId) {
+
+        return likeRepository.existsByUserIdAndTweetId(userId, tweetId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Long countLikes(Long tweetId) {
+
+        return likeRepository.countByTweetId(tweetId);
     }
 
 }

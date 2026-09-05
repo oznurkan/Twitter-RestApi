@@ -1,13 +1,15 @@
 package com.myproject.twitter.dto.response;
 
-
 import java.time.LocalDateTime;
 
-public record RetweetResponseDto(
+public record BookmarkResponseDto(
 
-        Long id,
-        String author,
+        String nickName,
+
         Long tweetId,
+
+        Boolean isBookmarkedByCurrentUser,
+
         LocalDateTime createdAt
 ) {
 }

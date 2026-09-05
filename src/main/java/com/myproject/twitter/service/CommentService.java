@@ -3,24 +3,25 @@ package com.myproject.twitter.service;
 import com.myproject.twitter.dto.request.CommentPatchRequestDto;
 import com.myproject.twitter.dto.request.CommentRequestDto;
 import com.myproject.twitter.dto.response.CommentResponseDto;
+import com.myproject.twitter.dto.response.CursorPageResponseDto;
 
 import java.util.List;
 
 public interface CommentService {
 
-    List<CommentResponseDto> getAll();
-    CommentResponseDto findById(Long id);
+    CommentResponseDto findById(Long tweetId, Long commentId);
 
-    CommentResponseDto replaceOrCreate(Long id, CommentRequestDto commentRequestDto);
-    CommentResponseDto update(Long id, CommentPatchRequestDto commentPatchRequestDto);
+    CommentResponseDto update(Long tweetId, Long commentId, CommentPatchRequestDto commentPatchRequestDto);
 
-    CommentResponseDto create(CommentRequestDto commentRequestDto);
-    void deleteById(Long id);
+    CommentResponseDto create(Long tweetId, CommentRequestDto commentRequestDto);
 
+    void deleteById(Long tweetId, Long commentId);
 
     List<CommentResponseDto> searchByContent(String content);
 
+    Long countComments(Long tweetId);
 
+    CursorPageResponseDto<CommentResponseDto> getCommentsByTweetId(Long tweetId, String cursor, int size);
 
 
 }

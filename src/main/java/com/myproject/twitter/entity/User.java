@@ -1,34 +1,32 @@
 package com.myproject.twitter.entity;
 
-
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
-
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
-@Table(name = "user", schema = "twitter")
+@Table(name = "users", schema = "twitter")
 @Entity
+@EntityListeners(AuditingEntityListener.class)
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString
+@ToString( exclude = { "password", "tweets", "comments", "retweets", "likes", "bookmarks", "followings", "followers", "sentMessages", "receivedMessages"})
 @EqualsAndHashCode(of = "id")
-public class User implements UserDetails {
+public class User{
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "nick_name")
+    @Column(name = "nick_name", unique = true, nullable = false)
     @NotBlank(message = "Kullanıcı ismi boş bırakılamaz.")
     @Size(max = 150 , min = 3)
     private String nickName;
@@ -48,12 +46,12 @@ public class User implements UserDetails {
     private String email;
 
     @NotBlank(message = "Şifre alanı boş bırakılamaz")
-    @Size(max = 150 )
+    @Size(max = 150 , min = 6)
     private String password;
 
     @Size(max = 255 )
     @Column(name = "bio")
-    private String text;
+    private String bio;
 
     @NotNull
     @CreatedDate
@@ -76,16 +74,29 @@ public class User implements UserDetails {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     private Set<Retweet> retweets = new HashSet<>();
 
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private Set<Bookmark> bookmarks = new HashSet<>();
+
+    @OneToMany(mappedBy = "follower", cascade = CascadeType.ALL)
+    private Set<Follow> followings = new HashSet<>();
+
+    @OneToMany(mappedBy = "following", cascade = CascadeType.ALL)
+    private Set<Follow> followers = new HashSet<>();
+
+    @OneToMany(mappedBy = "sender", cascade = CascadeType.ALL)
+    private Set<Message> sentMessages = new HashSet<>();
+
+    @OneToMany(mappedBy = "receiver", cascade = CascadeType.ALL)
+    private Set<Message> receivedMessages = new HashSet<>();
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
-            name = "user_role",
+            name = "user_roles",
             schema = "twitter",
             joinColumns = @JoinColumn(name = "user_id"),
             inverseJoinColumns = @JoinColumn(name = "role_id")
     )
     private Set<Role> roles = new HashSet<>();
-
 
     public void addTweet(Tweet tweet){
 
@@ -139,14 +150,70 @@ public class User implements UserDetails {
         this.retweets.remove(retweet);
     }
 
+    public void addBookmark(Bookmark bookmark){
 
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        return roles;
+        if( !bookmarks.contains(bookmark)){
+            this.bookmarks.add(bookmark);
+        }
+
     }
 
-    @Override
-    public String getUsername() {
-        return email;
+    public void deleteBookmark(Bookmark bookmark){
+
+        this.bookmarks.remove(bookmark);
+    }
+
+
+    public void addFollowing(Follow following){
+
+        if( !followings.contains(following)){
+            this.followings.add(following);
+        }
+
+    }
+
+    public void deleteFollowing(Follow following){
+
+        this.followings.remove(following);
+    }
+
+
+    public void addFollower(Follow follower){
+
+        if( !followers.contains(follower)){
+            this.followers.add(follower);
+        }
+
+    }
+
+    public void deleteFollower(Follow follower){
+
+        this.followers.remove(follower);
+    }
+
+    public void addSentMessage(Message sentMessage){
+
+        if( !sentMessages.contains(sentMessage)){
+            this.sentMessages.add(sentMessage);
+        }
+
+    }
+
+    public void deleteSentMessage(Message sentMessage){
+
+        this.sentMessages.remove(sentMessage);
+    }
+
+    public void addReceivedMessage(Message receivedMessage){
+
+        if( !receivedMessages.contains(receivedMessage)){
+            this.receivedMessages.add(receivedMessage);
+        }
+
+    }
+
+    public void deleteReceivedMessage(Message receivedMessage){
+
+        this.receivedMessages.remove(receivedMessage);
     }
 }

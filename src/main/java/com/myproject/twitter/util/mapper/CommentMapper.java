@@ -8,19 +8,24 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 
-
 @Component
 public class CommentMapper {
 
     public CommentResponseDto toResponseDto(Comment comment){
 
+        if( comment == null){
+            return null;
+        }
+
+        Long commentId = (comment.getId() != null ) ? comment.getId() : null;
+        Long tweetId = (comment.getTweet() != null) ? comment.getTweet().getId() : null;
+        String author = (comment.getUser() != null ) ? comment.getUser().getNickName() : null;
+
         return new CommentResponseDto(
-                comment.getId(),
-                comment.getUser() != null ? comment.getUser().getNickName(): "Unknown User",
-                comment.getContent(),
-                comment.getTweet() != null ? comment.getTweet().getId() : 0 ,
-                comment.getCreatedAt(),
-                comment.getUpdatedAt()
+                commentId,
+                tweetId,
+                author,
+                comment.getContent()
         );
     }
 

@@ -1,6 +1,5 @@
 package com.myproject.twitter.entity;
 
-
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -8,18 +7,20 @@ import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
-
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
-@Table(name = "tweet", schema = "twitter")
+@Table(name = "tweets", schema = "twitter")
 @Entity
+@EntityListeners(AuditingEntityListener.class)
+@Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"user", "likes", "comments", "retweets", "bookmarks", "hashtags"})
 @EqualsAndHashCode(of = "id")
 public class Tweet {
 
@@ -28,7 +29,7 @@ public class Tweet {
     private Long id;
 
     @NotBlank(message = "Tweet içeriği boş bırakılamaz.")
-    @Size(max = 255)
+    @Size(max = 255, message = "Tweet içeriği en fazla 255 karakter olmalıdır")
     private String content;
 
     @NotNull
@@ -40,11 +41,10 @@ public class Tweet {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @NotNull(message = "Kullanıcı alanı boş bırakılamaz")
-    @ManyToOne(fetch = FetchType.EAGER)
+    @NotNull(message = "Tweet için kullanıcı alanı boş bırakılamaz")
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
-
 
     @OneToMany(mappedBy = "tweet", cascade = CascadeType.ALL)
     private Set<Like> likes = new HashSet<>();
@@ -54,6 +54,18 @@ public class Tweet {
 
     @OneToMany(mappedBy = "tweet", cascade = CascadeType.ALL)
     private Set<Retweet> retweets = new HashSet<>();
+
+    @OneToMany(mappedBy = "tweet", cascade = CascadeType.ALL)
+    private Set<Bookmark> bookmarks = new HashSet<>();
+
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @JoinTable(
+            name = "tweet_hashtag",
+            schema = "twitter",
+            joinColumns = @JoinColumn(name = "tweet_id"),
+            inverseJoinColumns = @JoinColumn(name = "hashtag_id")
+    )
+    private Set<Hashtag> hashtags = new HashSet<>();
 
 
     public void addLike(Like like){
@@ -85,6 +97,17 @@ public class Tweet {
 
         this.retweets.remove(retweet);
     }
+
+    public void addBookmark(Bookmark bookmark){
+
+        this.bookmarks.add(bookmark);
+    }
+
+    public void deleteBookmark(Bookmark bookmark){
+
+        this.bookmarks.remove(bookmark);
+    }
+
 
 
 

@@ -26,19 +26,6 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(twitterErrorResponse, twitterException.getHttpStatus());
     }
 
-    @ExceptionHandler(TwitterConflictException.class)
-    public ResponseEntity<TwitterErrorResponse> handleConflict(TwitterConflictException ex){
-
-        TwitterErrorResponse response = new TwitterErrorResponse(
-                ex.getMessage(),
-                HttpStatus.CONFLICT.value(),
-                System.currentTimeMillis(),
-                LocalDateTime.now()
-        );
-
-        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
-    }
-
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<TwitterErrorResponse> handle(MethodArgumentTypeMismatchException methodArgumentTypeMismatchException){
 
@@ -70,7 +57,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<TwitterErrorResponse> handleInvalidDataAccessApiUsageException(InvalidDataAccessApiUsageException ex) {
 
         TwitterErrorResponse error = new TwitterErrorResponse(
-                ("İşlem yapılamadı: Gönderilen ID (null) veya parametreler hatalı. Lütfen tweetId'nin dolu olduğundan emin olun." + ex.getMessage()),
+                "İşlem yapılamadı: Gönderilen parametreler hatalı veya eksik.",
                 HttpStatus.BAD_REQUEST.value(),
                 System.currentTimeMillis(),
                 LocalDateTime.now()

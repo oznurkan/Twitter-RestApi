@@ -2,18 +2,21 @@ package com.myproject.twitter.entity;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
-
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
-@Table(name = "retweet", schema = "twitter")
+@Table(name = "retweets", schema = "twitter", uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "tweet_id"}))
 @Entity
+@EntityListeners(AuditingEntityListener.class)
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString
+@ToString( exclude = { "user", "tweet"})
 @EqualsAndHashCode(of = "id")
 public class Retweet {
 
@@ -21,19 +24,22 @@ public class Retweet {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotNull
     @CreatedDate
     @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;
 
+    @Size(max = 255, message = "Yorum en fazla 255 karakter olabilir.")
+    private String text;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     @NotNull(message = "Retweet işlemi için kullanıcı olmalıdır")
     private User user;
 
-
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tweet_id")
     @NotNull(message = "Retweet işlemi için tweet olmalıdır")
     private Tweet tweet;
+
 }

@@ -1,36 +1,47 @@
 package com.myproject.twitter.util.mapper;
 
-import com.myproject.twitter.dto.request.LikeRequestDto;
-import com.myproject.twitter.dto.response.LikeResponseDto;
+import com.myproject.twitter.dto.response.LikeActionResponseDto;
+import com.myproject.twitter.dto.response.LikeUserResponseDto;
 import com.myproject.twitter.entity.Like;
-
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDateTime;
 
 @Component
 public class LikeMapper {
 
-    public LikeResponseDto toResponseDto(Like like){
+    public LikeActionResponseDto toResponseDto(Like like, boolean isLiked){
 
-        return new LikeResponseDto(
-                like.getId(),
-                like.getUser() != null ? like.getUser().getNickName() : "Unknown user",
-                like.getTweet() != null ? like.getTweet().getId() : 0,
-                like.getCreatedAt()
+        if (like == null) {
+            return null;
+        }
+
+        String nickName = (like.getUser() != null) ? like.getUser().getNickName() : null;
+        Long tweetId = (like.getTweet() != null) ? like.getTweet().getId() : null;
+
+        return new LikeActionResponseDto(
+                tweetId,
+                nickName,
+                isLiked
         );
 
     }
 
-    public Like toEntity(LikeRequestDto likeRequestDto){
+    public LikeUserResponseDto toUserResponseDto(Like like, boolean isFollowing){
 
-        Like like = new Like();
-
-        if( like.getCreatedAt() == null){
-            like.setCreatedAt(LocalDateTime.now());
+        if (like == null) {
+            return null;
         }
 
-        return like;
+        String firstName = (like.getUser() != null) ? like.getUser().getFirstName() : null;
+        String lastName = (like.getUser() != null) ? like.getUser().getLastName() : null;
+        String nickName = (like.getUser() != null) ? like.getUser().getNickName() : null;
+
+        return new LikeUserResponseDto(
+                nickName,
+                firstName,
+                lastName,
+                isFollowing
+        );
+
     }
 
 }
